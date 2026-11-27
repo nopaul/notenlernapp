@@ -1,6 +1,6 @@
 // Wiederholungsplan mit FSRS (ts-fsrs) und automatische Bewertung aus Richtigkeit + Reaktionszeit.
 import { fsrs, generatorParameters, createEmptyCard, Rating, State } from '../vendor/ts-fsrs.mjs';
-import { NOTES, STAGES } from './music.js';
+import { NOTES, STAGES, inStaff } from './music.js';
 
 export { Rating, State };
 
@@ -118,7 +118,7 @@ export function mastery(cards) {
 
 // Freischaltung der nächsten Stufe: 85 % der Karten mindestens 3 Tage stabil, 70 % automatisiert
 export function stageReadiness(state, stage) {
-  const ids = stage.notes.flatMap((n) => ['A', 'B'].map((t) => cardId(n, t)));
+  const ids = stage.notes.filter(inStaff).flatMap((n) => ['A', 'B'].map((t) => cardId(n, t)));
   const cards = ids.map((id) => state.cards[id]).filter(Boolean);
   const total = ids.length;
   const stable = cards.filter((c) => stabilityDays(c) >= 3).length;

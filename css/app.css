@@ -403,6 +403,12 @@ a.stage:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
 .dots i.on { width: 26px; background: var(--grad); }
 .choice { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 
+/* Merksätze */
+.mn-big { font-size: clamp(1.3rem, 4.5vw, 1.7rem); font-weight: 700; letter-spacing: -0.01em; text-align: center; padding: 14px 16px; border-radius: 18px; background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow); }
+.mn-init { color: var(--accent); font-weight: 900; }
+.mn-mark { background: color-mix(in srgb, var(--accent) 18%, transparent); border-radius: 6px; padding: 0 4px; }
+.mn-hint { margin-top: 6px; }
+
 /* Einstellungen */
 .settings { display: grid; gap: 14px; max-width: 680px; }
 .set-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--border); }

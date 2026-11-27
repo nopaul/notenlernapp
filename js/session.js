@@ -1,5 +1,5 @@
 // Stellt eine Tagessitzung zusammen: Aufwärmen, fällige Wiederholungen, neue Noten.
-import { STAGES, NOTES } from './music.js';
+import { STAGES, NOTES, inStaff } from './music.js';
 import { cardId, dueDate, stabilityDays, isUnlocked, State } from './srs.js';
 
 export function todayKey(d = new Date()) {
@@ -12,8 +12,13 @@ function introducedToday(state, type) {
   return Object.values(state.cards).filter((c) => c.type === type && todayKey(new Date(c.introduced)) === t).length;
 }
 
+// Karten zu Noten mit Hilfslinien ruhen vorerst
+export function activeCards(state) {
+  return Object.values(state.cards).filter((c) => inStaff(c.noteId));
+}
+
 export function dueCards(state, now = new Date()) {
-  return Object.values(state.cards)
+  return activeCards(state)
     .filter((c) => dueDate(c) <= now)
     .sort((a, b) => dueDate(a) - dueDate(b));
 }
@@ -24,11 +29,11 @@ export function newCandidates(state) {
   STAGES.forEach((stage) => {
     if (!stage.facts.length || !isUnlocked(state, stage.id)) return;
     stage.facts.forEach((n) => {
-      if (!state.cards[cardId(n, 'A')]) facts.push({ noteId: n, stageId: stage.id });
+      if (inStaff(n) && !state.cards[cardId(n, 'A')]) facts.push({ noteId: n, stageId: stage.id });
     });
   });
   // Karte B ("Note setzen") kommt, sobald Karte A die Lernphase verlassen hat
-  Object.values(state.cards)
+  activeCards(state)
     .filter((c) => c.type === 'A' && c.fsrs.state === State.Review && !state.cards[cardId(c.noteId, 'B')])
     .forEach((c) => bCards.push({ noteId: c.noteId }));
   return { facts, bCards };
@@ -61,7 +66,7 @@ export function buildSession(state, { minutes = 12, short = false, extra = false
 
   if (extra && !due.length) {
     // Zusatzrunde: die Karten, die als Nächstes fällig würden
-    due = Object.values(state.cards)
+    due = activeCards(state)
       .sort((a, b) => dueDate(a) - dueDate(b))
       .slice(0, 12);
   }
