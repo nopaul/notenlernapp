@@ -58,7 +58,7 @@ export const STAGES = [
     id: 1,
     code: 'T1',
     title: 'Die sechs Leersaiten',
-    subtitle: 'Deine ersten Leitnoten: E A D G H E',
+    subtitle: 'Deine ersten Leitnoten. Abgefragt werden vorerst G, H und E im System',
     notes: ['E3', 'A3', 'D4', 'G4', 'H4', 'E5'],
     facts: ['E5', 'H4', 'G4', 'D4', 'A3', 'E3'],
   },
@@ -71,6 +71,54 @@ export const STAGES = [
     facts: ['F5', 'C5', 'G5', 'D5'],
   },
 ];
+
+// Abfragekarten gibt es vorerst nur für Noten auf den fünf Linien und in den
+// vier Zwischenräumen dazwischen (E4 bis F5), also ohne Hilfslinien.
+export const STAFF_MIN = 0;
+export const STAFF_MAX = 8;
+export function inStaff(noteId) {
+  const n = NOTES[noteId];
+  return !!n && n.pos >= STAFF_MIN && n.pos <= STAFF_MAX;
+}
+
+// Merksätze, jeweils von unten nach oben
+export const LINE_MNEMONIC = [
+  { letter: 'E', word: 'Eine' },
+  { letter: 'G', word: 'Gans' },
+  { letter: 'H', word: 'hat' },
+  { letter: 'D', word: 'drei' },
+  { letter: 'F', word: 'Federn' },
+];
+export const SPACE_MNEMONIC = [
+  { letter: 'F', word: 'Fritz' },
+  { letter: 'A', word: 'aß' },
+  { letter: 'C', word: 'Citronen-' },
+  { letter: 'E', word: 'Eis' },
+];
+export const LINE_SENTENCE = 'Eine Gans hat drei Federn';
+export const SPACE_SENTENCE = 'Fritz aß gerne Citronen-Eis';
+
+// HTML des Merksatzes mit hervorgehobenen Anfangsbuchstaben; mark = Index des gesuchten Worts
+export function mnemonicHTML(kind, mark = -1) {
+  const words = kind === 'line' ? LINE_MNEMONIC : SPACE_MNEMONIC;
+  const parts = words.map((w, i) => {
+    const html = `<b class="mn-init">${w.word[0]}</b>${w.word.slice(1)}`;
+    return i === mark ? `<span class="mn-mark">${html}</span>` : html;
+  });
+  if (kind === 'space') return `${parts[0]} ${parts[1]} gerne ${parts[2]}${parts[3]}`;
+  return parts.join(' ');
+}
+
+// Erklärung einer Position im System über den Merksatz
+export function mnemonicFor(pos) {
+  if (pos < STAFF_MIN || pos > STAFF_MAX) return null;
+  if (isLine(pos)) {
+    const i = pos / 2;
+    return { kind: 'line', index: i, place: `${i + 1}. Linie`, word: LINE_MNEMONIC[i].word, letter: LINE_MNEMONIC[i].letter };
+  }
+  const i = (pos - 1) / 2;
+  return { kind: 'space', index: i, place: `${i + 1}. Zwischenraum`, word: SPACE_MNEMONIC[i].word.replace('-', ''), letter: SPACE_MNEMONIC[i].letter };
+}
 
 export function stageOfNote(noteId) {
   return STAGES.find((s) => s.facts.includes(noteId));

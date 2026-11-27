@@ -1,11 +1,11 @@
 // NotenLernApp – Oberfläche und Ablauf
-import { NOTES, STAGES, LETTERS, STRINGS, displayLetter, displayName, describePos, describeFret, explainDiff, nearestPosOfLetter, isLine, letterAt } from './music.js';
+import { NOTES, STAGES, LETTERS, STRINGS, displayLetter, displayName, describePos, describeFret, explainDiff, nearestPosOfLetter, isLine, letterAt, inStaff, mnemonicHTML, mnemonicFor } from './music.js';
 import { staffSVG, noteSVG, pickStaffSVG, posFromPointer, PICK_MIN, PICK_MAX } from './notation.js';
 import { fretboardSVG } from './fretboard.js';
 import { playMidi, playError, sound } from './audio.js';
 import * as store from './store.js';
 import { newCardRecord, applyAnswer, dueDate, mastery, stageReadiness, isUnlocked, noteCards, cardId, TARGET_RT, RATING_LABEL, CARD_TYPES } from './srs.js';
-import { buildSession, planSummary, requeue, todayKey, automatedSet } from './session.js';
+import { buildSession, planSummary, requeue, todayKey, automatedSet, activeCards } from './session.js';
 import { ICONS } from './icons.js';
 
 const app = document.getElementById('app');
@@ -105,9 +105,9 @@ function shell(content, active) {
     </header>
     ${content}
   </div>
-  <nav class="nav" aria-label="Hauptnavigation">
+  ${active === 'lesson' ? '' : `<nav class="nav" aria-label="Hauptnavigation">
     ${nav.map(([h, ic, label]) => `<a href="${h}" class="${active === h ? 'active' : ''}">${ICONS[ic]}<span>${label}</span></a>`).join('')}
-  </nav>`;
+  </nav>`}`;
 }
 
 function stopTimers() {
@@ -218,7 +218,7 @@ function renderHome() {
   const greet = hour < 11 ? 'Guten Morgen' : hour < 18 ? 'Hallo' : 'Guten Abend';
   const dateStr = now.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' });
 
-  const nextFact = STAGES.flatMap((s) => (isUnlocked(state, s.id) ? s.facts : [])).find((n) => !state.cards[cardId(n, 'A')]);
+  const nextFact = STAGES.flatMap((s) => (isUnlocked(state, s.id) ? s.facts : [])).find((n) => inStaff(n) && !state.cards[cardId(n, 'A')]);
   const artNote = nextFact || 'G4';
 
   let hero;
@@ -245,7 +245,7 @@ function renderHome() {
         ${plan.due ? `<button class="btn btn-soft btn-lg" data-act="short">${ICONS.bolt} 3 Minuten</button>` : ''}
       </div></div>${heroArt(artNote)}`;
   } else {
-    const dues = Object.values(state.cards).map(dueDate).sort((a, b) => a - b);
+    const dues = activeCards(state).map(dueDate).sort((a, b) => a - b);
     const next = dues[0];
     hero = `<div><span class="badge" style="background:var(--ok-soft);color:var(--ok)">${ICONS.check} Erledigt</span>
       <h2 style="margin-top:14px">Für heute bist du durch.</h2>
@@ -364,7 +364,7 @@ function galleryCard(n, withStats = true) {
     ${
       withStats
         ? `<div class="bar"><i style="width:${Math.round(m * 100)}%"></i></div>
-    <div class="g-meta"><span>${known ? `${acc ?? 0} % richtig` : 'noch neu'}</span><span>${cards.some((c) => c.automated) ? 'flüssig' : ''}</span></div>`
+    <div class="g-meta"><span>${!inStaff(n) ? 'Abfrage später (Hilfslinien)' : known ? `${acc ?? 0} % richtig` : 'noch neu'}</span><span>${cards.some((c) => c.automated) ? 'flüssig' : ''}</span></div>`
         : ''
     }
   </button>`;
@@ -726,7 +726,7 @@ function showWrong(item, card, chosenPos) {
       : `Deine Note war ${diff}, das wäre ein ${chosenName}.`;
   app.querySelector('#fb').innerHTML = `<div class="feedback err">
     <div class="fb-head"><div class="fb-icon">${ICONS.x}</div><div><div class="fb-title">${title}</div><div class="fb-sub">${why}</div></div></div>
-    <div class="fb-body"><div class="fb-wrap">${noteFret(card.noteId, 'ok')}</div><div class="small">${name} liegt ${describePos(note.pos)}.<br>${describeFret(note)}.</div></div>
+    <div class="fb-body"><div class="fb-wrap">${noteFret(card.noteId, 'ok')}</div><div class="small">${name} liegt ${describePos(note.pos)}.<br>${describeFret(note)}.${mnemonicLine(note.pos)}</div></div>
     <div class="fb-actions"><button class="btn btn-soft" data-play>${ICONS.sound} Anhören</button><button class="btn btn-dark" data-retry>Nochmal versuchen ${ICONS.arrow}</button></div>
   </div>`;
   app.querySelectorAll('.key').forEach((k) => (k.disabled = true));
@@ -740,6 +740,12 @@ function showWrong(item, card, chosenPos) {
   app.querySelector('[data-retry]').addEventListener('click', retry);
   setTimeout(() => (keyHandler = (e) => e.key === 'Enter' && retry()), 300);
   keyHandler = null;
+}
+
+function mnemonicLine(pos) {
+  const m = mnemonicFor(pos);
+  if (!m) return '';
+  return `<div class="mn-hint">${m.place}: ${mnemonicHTML(m.kind, m.index)} → <b>${displayLetter(m.letter, naming())}</b></div>`;
 }
 
 function finishSession(early = false) {
@@ -757,7 +763,7 @@ function finishSession(early = false) {
   const after = automatedSet(state);
   const better = [...after].filter((id) => !session.automatedBefore.has(id)).map((id) => id.split(':')[0]);
   const betterNames = [...new Set(better)].map((n) => nm(n));
-  const dues = Object.values(state.cards).map(dueDate).sort((a, b) => a - b);
+  const dues = activeCards(state).map(dueDate).sort((a, b) => a - b);
   const next = dues.find((d) => d > new Date()) || dues[0];
   const newNotes = session.newNotes.map((n) => nm(n));
   const minutes = Math.max(1, Math.round((Date.now() - session.startedAt) / 60000));
@@ -816,6 +822,26 @@ function basicsSlides() {
       ),
     },
     {
+      title: 'Merksatz für die Linien',
+      text: `Die Noten auf den fünf Linien heißen von unten nach oben ${['E', 'G', 'H', 'D', 'F'].map(lab).join(' ')}. Merk sie dir mit dem Satz:`,
+      img: staffSVG(
+        [0, 2, 4, 6, 8].map((p) => ({ pos: p, value: 'whole', label: lab(letterAt(p)) })),
+        { clef: true, gap: 28 },
+      ),
+      big: mnemonicHTML('line'),
+      foot: 'Jeder Anfangsbuchstabe ist eine Note, von der untersten Linie nach oben.',
+    },
+    {
+      title: 'Merksatz für die Zwischenräume',
+      text: 'Die Noten in den vier Zwischenräumen heißen von unten nach oben F A C E. Merk sie dir mit dem Satz:',
+      img: staffSVG(
+        [1, 3, 5, 7].map((p) => ({ pos: p, value: 'whole', label: lab(letterAt(p)) })),
+        { clef: true, gap: 32 },
+      ),
+      big: mnemonicHTML('space'),
+      foot: 'Das „gerne“ zählt nicht mit. Von unten nach oben ergibt sich F A C E, wie das englische Wort für Gesicht.',
+    },
+    {
       title: 'Form und Höhe',
       text: 'Dasselbe C als ganze Note, Halbe, Viertel und Achtel: Die Form sagt, wie lange der Ton klingt. Welcher Ton es ist, verrät nur die Höhe.',
       img: staffSVG(
@@ -867,15 +893,18 @@ function renderBasics() {
         <div class="paper">${s.img}</div>
         ${s.foot ? `<p class="muted small">${s.foot}</p>` : ''}
         <p>${s.text}</p>
+        ${s.big ? `<p class="mn-big">${s.big}</p>` : ''}
+        ${i === 0 && state.t0Done ? `<button class="btn btn-soft" data-skip>${ICONS.bolt} Direkt zu den Übungen</button>` : ''}
         <div class="row-actions" style="justify-content:space-between">
           <button class="btn btn-ghost" data-prev ${i === 0 ? 'disabled style="visibility:hidden"' : ''}>${ICONS.back} Zurück</button>
           ${s.notes ? `<button class="btn btn-soft" data-listen>${ICONS.sound} Anhören</button>` : ''}
           <button class="btn btn-primary" data-fwd>Weiter ${ICONS.arrow}</button>
         </div></section>`,
-        '',
+        'lesson',
       );
       app.querySelector('[data-fwd]').addEventListener('click', () => (i++, draw()));
       app.querySelector('[data-prev]')?.addEventListener('click', () => (i--, draw()));
+      app.querySelector('[data-skip]')?.addEventListener('click', () => ((i = slides.length), draw()));
       app.querySelector('[data-listen]')?.addEventListener('click', () => s.notes.forEach((id, k) => setTimeout(() => play(id), k * 420)));
       keyHandler = (e) => {
         if (e.key === 'ArrowRight' || e.key === 'Enter') (i++, draw());
@@ -883,51 +912,107 @@ function renderBasics() {
       };
       return;
     }
-    // Kurzes Quiz: Linie oder Zwischenraum?
+    // Übungen: erst Linie oder Zwischenraum, dann Notennamen mit den Merksätzen
     if (!quiz) {
-      const pool = [-1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
-      quiz = { qs: pool.sort(() => Math.random() - 0.5).slice(0, 6), k: 0, right: 0 };
+      const shuffle = (a) => a.map((x) => [Math.random(), x]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);
+      const ls = shuffle([0, 1, 2, 3, 4, 5, 6, 7, 8]).slice(0, 5).map((pos) => ({ kind: 'ls', pos }));
+      const names = shuffle([0, 1, 2, 3, 4, 5, 6, 7, 8]).map((pos) => ({ kind: 'name', pos }));
+      quiz = { qs: [...ls, ...names], k: 0, right: 0 };
     }
     if (quiz.k >= quiz.qs.length) {
+      const first = !state.t0Done;
       state.t0Done = true;
       save();
       app.innerHTML = shell(
         `<section class="lesson" style="padding-top:16px;text-align:center">
           <div class="big-check">${ICONS.check}</div>
           <h2>Grundlagen geschafft</h2>
-          <p class="muted">${quiz.right} von ${quiz.qs.length} richtig. Jetzt geht es an die echten Noten: die sechs Leersaiten deiner Gitarre.</p>
-          <div class="row-actions"><button class="btn btn-primary btn-lg" data-act="start">${ICONS.play} Erste Sitzung starten</button><a class="btn btn-soft btn-lg" href="#/heute">Zur Übersicht</a></div>
+          <p class="muted">${quiz.right} von ${quiz.qs.length} richtig.${first ? ' Jetzt geht es an die echten Noten auf deiner Gitarre.' : ''}</p>
+          <div class="row-actions"><button class="btn btn-primary btn-lg" data-act="start">${ICONS.play} ${first ? 'Erste Sitzung starten' : 'Sitzung starten'}</button><button class="btn btn-soft btn-lg" data-again>${ICONS.retry} Übungen wiederholen</button><a class="btn btn-ghost btn-lg" href="#/heute">Zur Übersicht</a></div>
         </section>`,
-        '',
+        'lesson',
       );
       bindCommon();
+      app.querySelector('[data-again]').addEventListener('click', () => ((quiz = null), draw()));
       return;
     }
-    const pos = quiz.qs[quiz.k];
-    app.innerHTML = shell(
-      `<section class="lesson" style="padding-top:16px">
+    const q = quiz.qs[quiz.k];
+    const pos = q.pos;
+    const head = `<section class="lesson" style="padding-top:16px">
         <div class="dots">${Array.from({ length: total }, (_, k) => `<i class="${k === i ? 'on' : ''}"></i>`).join('')}</div>
-        <div class="eyebrow">Kurzer Check · Frage ${quiz.k + 1} von ${quiz.qs.length}</div>
+        <div class="eyebrow">Übung · Aufgabe ${quiz.k + 1} von ${quiz.qs.length}</div>`;
+    const m = mnemonicFor(pos);
+    const next = () => (quiz.k++, draw());
+    if (q.kind === 'ls') {
+      app.innerHTML = shell(
+        `${head}
         <h2>Linie oder Zwischenraum?</h2>
         <div class="paper q-card" id="qcard">${staffSVG([{ pos, value: 'whole' }], { clef: true, minWidth: 120, center: true })}</div>
         <div class="choice"><button class="btn btn-soft btn-lg" data-c="line">Linie</button><button class="btn btn-soft btn-lg" data-c="space">Zwischenraum</button></div>
         <div id="fb"></div>
       </section>`,
-      '',
+        'lesson',
+      );
+      const answer = (c) => {
+        const right = (c === 'line') === isLine(pos);
+        if (right) quiz.right++;
+        app.querySelectorAll('[data-c]').forEach((b) => (b.disabled = true));
+        app.querySelector(`[data-c="${c}"]`).className = `btn btn-lg ${right ? 'btn-primary' : 'btn-danger'}`;
+        app.querySelector('#fb').innerHTML = `<div class="feedback ${right ? 'ok' : 'err'}"><div class="fb-head"><div class="fb-icon">${right ? ICONS.check : ICONS.x}</div><div><div class="fb-title">${right ? 'Richtig' : 'Nicht ganz'}</div><div class="fb-sub">Die Note liegt ${describePos(pos)}.</div></div></div></div>`;
+        advanceId = setTimeout(next, right ? 900 : 2200);
+        keyHandler = null;
+      };
+      app.querySelectorAll('[data-c]').forEach((b) => b.addEventListener('click', () => answer(b.dataset.c)));
+      keyHandler = (e) => {
+        if (e.key.toLowerCase() === 'l') answer('line');
+        if (e.key.toLowerCase() === 'z') answer('space');
+      };
+      return;
+    }
+    // Notenname mit Merksatz
+    const letter = letterAt(pos);
+    const letters = LETTERS.map((l) => ({ l, d: displayLetter(l, naming()) }));
+    app.innerHTML = shell(
+      `${head}
+        <h2>Welche Note ist das?</h2>
+        <p class="muted" style="margin:0">Tipp: ${m.kind === 'line' ? 'Linien' : 'Zwischenräume'} von unten zählen, dann den Merksatz nutzen.</p>
+        <div class="paper q-card" id="qcard">${staffSVG([{ pos, value: 'whole' }], { clef: true, minWidth: 120, center: true })}</div>
+        <div class="keypad">${letters.map(({ l, d }) => `<button class="key" data-letter="${l}">${d}</button>`).join('')}</div>
+        <div id="fb"></div>
+      </section>`,
+      'lesson',
     );
-    const answer = (c) => {
-      const right = (c === 'line') === isLine(pos);
+    const answer = (given) => {
+      const right = given === letter;
       if (right) quiz.right++;
-      app.querySelectorAll('[data-c]').forEach((b) => (b.disabled = true));
-      app.querySelector(`[data-c="${c}"]`).className = `btn btn-lg ${right ? 'btn-primary' : 'btn-danger'}`;
-      app.querySelector('#fb').innerHTML = `<div class="feedback ${right ? 'ok' : 'err'}"><div class="fb-head"><div class="fb-icon">${right ? ICONS.check : ICONS.x}</div><div><div class="fb-title">${right ? 'Richtig' : 'Nicht ganz'}</div><div class="fb-sub">Die Note liegt ${describePos(pos)}.</div></div></div></div>`;
-      advanceId = setTimeout(() => (quiz.k++, draw()), right ? 900 : 2200);
-      keyHandler = null;
+      app.querySelectorAll('.key').forEach((k) => (k.disabled = true));
+      app.querySelector(`.key[data-letter="${given}"]`).classList.add(right ? 'ok' : 'err');
+      if (!right) app.querySelector(`.key[data-letter="${letter}"]`).classList.add('ok');
+      app.querySelector('#qcard').innerHTML = staffSVG([{ pos, value: 'whole', cls: 'ok', label: displayLetter(letter, naming()), labelCls: 'ok' }], {
+        clef: true,
+        minWidth: 120,
+        center: true,
+        highlightPos: pos,
+      });
+      app.querySelector('#fb').innerHTML = `<div class="feedback ${right ? 'ok' : 'err'}">
+        <div class="fb-head"><div class="fb-icon">${right ? ICONS.check : ICONS.x}</div><div><div class="fb-title">${right ? 'Richtig' : 'Das ist ein'} ${displayLetter(letter, naming())}</div>
+        <div class="fb-sub">${m.place}: ${mnemonicHTML(m.kind, m.index)}</div></div></div>
+        ${right ? '' : `<div class="fb-actions"><button class="btn btn-dark" data-go>Weiter ${ICONS.arrow}</button></div>`}
+      </div>`;
+      if (right) {
+        advanceId = setTimeout(next, 1400);
+        keyHandler = null;
+      } else {
+        app.querySelector('[data-go]').addEventListener('click', next);
+        app.querySelector('#fb').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        keyHandler = (e) => e.key === 'Enter' && next();
+      }
     };
-    app.querySelectorAll('[data-c]').forEach((b) => b.addEventListener('click', () => answer(b.dataset.c)));
+    app.querySelectorAll('.key').forEach((k) => k.addEventListener('click', () => answer(k.dataset.letter)));
     keyHandler = (e) => {
-      if (e.key.toLowerCase() === 'l') answer('line');
-      if (e.key.toLowerCase() === 'z') answer('space');
+      const k = e.key.toUpperCase();
+      const l = naming() === 'en' && k === 'B' ? 'H' : k;
+      if (LETTERS.includes(l)) answer(l);
     };
   };
   draw();
